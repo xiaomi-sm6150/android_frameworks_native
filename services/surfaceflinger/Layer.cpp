@@ -67,18 +67,9 @@
 #include "MonitoredProducer.h"
 #include "SurfaceFlinger.h"
 #include "TimeStats/TimeStats.h"
-#include "QtiGralloc.h"
-
-#ifdef QTI_DISPLAY_CONFIG_ENABLED
-#include <config/client_interface.h>
-namespace DisplayConfig {
-    class ClientInterface;
-}
-#endif
 
 #define DEBUG_RESIZE 0
 
-using android::hardware::graphics::common::V1_0::BufferUsage;
 namespace android {
 
 using base::StringAppendF;
@@ -145,12 +136,8 @@ Layer::Layer(const LayerCreationArgs& args)
 
     mCallingPid = args.callingPid;
     mCallingUid = args.callingUid;
-#ifdef TARGET_DISPLAY_HAS_NO_MASK_LAYER
-    mDontScreenShot = false;
-#else
-    mDontScreenShot = args.metadata.getInt32(METADATA_WINDOW_TYPE_DONT_SCREENSHOT, 0) ?
-                      true : false;
-#endif // TARGET_DISPLAY_HAS_NO_MASK_LAYER
+
+    mAvailableFrameNumber = 0;
 }
 
 void Layer::onFirstRef() {
@@ -506,13 +493,9 @@ void Layer::prepareGeometryCompositionState() {
     compositionState->geomBufferUsesDisplayInverseTransform = getTransformToDisplayInverse();
     compositionState->geomUsesSourceCrop = usesSourceCrop();
     compositionState->isSecure = isSecure();
-    compositionState->isSecureDisplay = isSecureDisplay();
-    compositionState->isSecureCamera = isSecureCamera();
-    compositionState->isScreenshot = isScreenshot();
 
     compositionState->type = type;
     compositionState->appId = appId;
-    compositionState->layerClass = mLayerClass;
 
     compositionState->metadata.clear();
     const auto& supportedMetadata = mFlinger->getHwComposer().getSupportedLayerGenericMetadata();
@@ -789,23 +772,6 @@ bool Layer::isSecure() const {
     return (s.flags & layer_state_t::eLayerSecure);
 }
 
-bool Layer::isSecureDisplay() const {
-    sp<const GraphicBuffer> buffer = getBuffer();
-    return buffer && (buffer->getUsage() & GRALLOC_USAGE_PRIVATE_SECURE_DISPLAY);
-}
-
-bool Layer::isSecureCamera() const {
-    sp<const GraphicBuffer> buffer = getBuffer();
-    bool protected_buffer = buffer && (buffer->getUsage() & BufferUsage::PROTECTED);
-    bool camera_output = buffer && (buffer->getUsage() & BufferUsage::CAMERA_OUTPUT);
-    return protected_buffer && camera_output;
-}
-
-bool Layer::isScreenshot() const {
-    return ((getName().find("ScreenshotSurface") != std::string::npos) ||
-            (getName().find("RotationLayer") != std::string::npos) ||
-            (getName().find("BackColorSurface") != std::string::npos));
-}
 // ----------------------------------------------------------------------------
 // transaction
 // ----------------------------------------------------------------------------
@@ -1353,21 +1319,15 @@ bool Layer::setFrameRateSelectionPriority(int32_t priority) {
 int32_t Layer::getFrameRateSelectionPriority() const {
     // Check if layer has priority set.
     if (mDrawingState.frameRateSelectionPriority != PRIORITY_UNSET) {
-        mPriority = mDrawingState.frameRateSelectionPriority;
-        return mPriority;
+        return mDrawingState.frameRateSelectionPriority;
     }
     // If not, search whether its parents have it set.
     sp<Layer> parent = getParent();
     if (parent != nullptr) {
-        mPriority = parent->getFrameRateSelectionPriority();
-        return mPriority;
+        return parent->getFrameRateSelectionPriority();
     }
 
     return Layer::PRIORITY_UNSET;
-}
-
-int32_t Layer::getPriority() {
-    return mPriority;
 }
 
 bool Layer::isLayerFocusedBasedOnPriority(int32_t priority) {
@@ -1543,30 +1503,6 @@ uint32_t Layer::getEffectiveUsage(uint32_t usage) const {
     if (mPotentialCursor) {
         usage |= GraphicBuffer::USAGE_CURSOR;
     }
-#ifdef QTI_DISPLAY_CONFIG_ENABLED
-    if (mDontScreenShot) {
-        // This is a WINDOW_TYPE_DONT_SCREENSHOT "mask" layer which needs to be CPU-read for
-        // special processing and programming of mask h/w IF the feature is supported.
-        static bool rc_supported = false;
-        static int read_rc_supported = true;
-        if (read_rc_supported) {
-          // Do this once per process lifetime.
-          read_rc_supported = false;
-          ::DisplayConfig::ClientInterface *DisplayConfigIntf = nullptr;
-          ::DisplayConfig::ClientInterface::Create("SurfaceFlinger::Layer" + std::to_string(0),
-              nullptr, &DisplayConfigIntf);
-          if (DisplayConfigIntf) {
-              DisplayConfigIntf->IsRCSupported(0, &rc_supported);
-              ::DisplayConfig::ClientInterface::Destroy(DisplayConfigIntf);
-          }
-          ALOGI("Mask layers are %sCPU-readable.", rc_supported ? "" : "*NOT* ");
-        }
-        if (rc_supported) {
-            usage |= GraphicBuffer::USAGE_SW_READ_RARELY;
-            usage |= GraphicBuffer::USAGE_SW_WRITE_RARELY;
-        }
-    }
-#endif  // QTI_DISPLAY_CONFIG_ENABLED
     usage |= GraphicBuffer::USAGE_HW_COMPOSER;
     return usage;
 }
@@ -1642,7 +1578,6 @@ void Layer::miniDumpHeader(std::string& result) {
     result.append(" Layer name\n");
     result.append("           Z | ");
     result.append(" Window Type | ");
-    result.append(" Layer Class | ");
     result.append(" Comp Type | ");
     result.append(" Transform | ");
     result.append("  Disp Frame (LTRB) | ");
@@ -1694,7 +1629,6 @@ void Layer::miniDump(std::string& result, const DisplayDevice& display) const {
         StringAppendF(&result, "  %10d | ", layerState.z);
     }
     StringAppendF(&result, "  %10d | ", mWindowType);
-    StringAppendF(&result, "  %10d | ", mLayerClass);
     StringAppendF(&result, "%10s | ", toString(getCompositionType(display)).c_str());
     StringAppendF(&result, "%10s | ", toString(outputLayerState.bufferTransform).c_str());
     const Rect& frame = outputLayerState.displayFrame;
@@ -2708,6 +2642,10 @@ void Layer::updateClonedRelatives(const std::map<sp<Layer>, sp<Layer>>& clonedLa
 void Layer::addChildToDrawing(const sp<Layer>& layer) {
     mDrawingChildren.add(layer);
     layer->mDrawingParent = this;
+}
+
+void Layer::clearNotifiedFrameNumber() {
+    mAvailableFrameNumber = 0;
 }
 
 Layer::FrameRateCompatibility Layer::FrameRate::convertCompatibility(int8_t compatibility) {

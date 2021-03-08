@@ -35,10 +35,6 @@
 #include "Scheduler/LayerHistory.h"
 #include "TimeStats/TimeStats.h"
 
-#include "frame_extn_intf.h"
-#include "smomo_interface.h"
-#include "layer_extn_intf.h"
-
 namespace android {
 
 BufferQueueLayer::BufferQueueLayer(const LayerCreationArgs& args) : BufferLayer(args) {}
@@ -127,18 +123,7 @@ bool BufferQueueLayer::shouldPresentNow(nsecs_t expectedPresentTime) const {
         mFlinger->mTimeStats->incrementBadDesiredPresent(getSequence());
     }
 
-    bool isDue = addedTime < expectedPresentTime;
-
-    if (isDue && mFlinger->mSmoMo) {
-        smomo::SmomoBufferStats bufferStats;
-        bufferStats.id = getSequence();
-        bufferStats.queued_frames = getQueuedFrameCount();
-        bufferStats.auto_timestamp = mQueueItems[0].mIsAutoTimestamp;
-        bufferStats.timestamp = mQueueItems[0].mTimestamp;
-        bufferStats.dequeue_latency = 0;
-        isDue = mFlinger->mSmoMo->ShouldPresentNow(bufferStats, expectedPresentTime);
-    }
-
+    const bool isDue = addedTime < expectedPresentTime;
     return isDue || !isPlausible;
 }
 
@@ -192,10 +177,17 @@ uint64_t BufferQueueLayer::getFrameNumber(nsecs_t expectedPresentTime) const {
     }
 
     for (int i = 1; i < mQueueItems.size(); i++) {
+        if (mAvailableFrameNumber != 0 &&
+            mQueueItems[i].mFrameNumber > mAvailableFrameNumber) {
+            break;
+        }
+
         const bool fenceSignaled =
                 mQueueItems[i].mFenceTime->getSignalTime() != Fence::SIGNAL_TIME_PENDING;
-        if (!fenceSignaled) {
-            break;
+        if (!latchUnsignaledBuffers()) {
+            if (!fenceSignaled) {
+                break;
+            }
         }
 
         // We don't drop frames without explicit timestamps
@@ -273,10 +265,16 @@ status_t BufferQueueLayer::updateTexImage(bool& recomputeVisibleRegions, nsecs_t
     {
         Mutex::Autolock lock(mQueueItemLock);
         for (int i = 0; i < mQueueItems.size(); i++) {
+            if (mAvailableFrameNumber != 0 &&
+                mQueueItems[i].mFrameNumber > mAvailableFrameNumber) {
+                break;
+            }
             bool fenceSignaled =
                     mQueueItems[i].mFenceTime->getSignalTime() != Fence::SIGNAL_TIME_PENDING;
-            if (!fenceSignaled) {
-                break;
+            if (!latchUnsignaledBuffers()) {
+                if (!fenceSignaled) {
+                    break;
+                }
             }
             lastSignaledFrameNumber = mQueueItems[i].mFrameNumber;
         }
@@ -447,42 +445,6 @@ void BufferQueueLayer::onFrameAvailable(const BufferItem& item) {
     mFlinger->mInterceptor->saveBufferUpdate(layerId, item.mGraphicBuffer->getWidth(),
                                              item.mGraphicBuffer->getHeight(), item.mFrameNumber);
 
-    if (mFlinger->mSmoMo) {
-        smomo::SmomoBufferStats bufferStats;
-        bufferStats.id = getSequence();
-        bufferStats.queued_frames = getQueuedFrameCount();
-        bufferStats.auto_timestamp = item.mIsAutoTimestamp;
-        bufferStats.timestamp = item.mTimestamp;
-        bufferStats.dequeue_latency = 0;
-        mFlinger->mSmoMo->CollectLayerStats(bufferStats);
-    }
-
-    if (mFlinger->mFrameExtn && mFlinger->mDolphinFuncsEnabled) {
-        composer::FrameInfo frameInfo;
-        frameInfo.version.major = (uint8_t)(1);
-        frameInfo.version.minor = (uint8_t)(0);
-        frameInfo.max_queued_frames = mFlinger->mMaxQueuedFrames;
-        frameInfo.num_idle = mFlinger->mNumIdle;
-        frameInfo.max_queued_layer_name = mFlinger->mNameLayerMax;
-        frameInfo.current_timestamp = systemTime(SYSTEM_TIME_MONOTONIC);
-        frameInfo.previous_timestamp = mLastTimeStamp;
-        frameInfo.vsync_timestamp = mFlinger->mVsyncTimeStamp;
-        frameInfo.refresh_timestamp = mFlinger->mRefreshTimeStamp;
-        frameInfo.ref_latency = mFrameTracker.getPreviousGfxInfo();
-        frameInfo.vsync_period = mFlinger->mVsyncPeriod;
-        frameInfo.transparent_region = !this->isOpaque(mDrawingState);
-        if (frameInfo.transparent_region) {
-            if (this->isLayerFocusedBasedOnPriority(this->getPriority())) {
-                frameInfo.transparent_region = false;
-            }
-        }
-        frameInfo.width = item.mGraphicBuffer->getWidth();
-        frameInfo.height = item.mGraphicBuffer->getHeight();
-        frameInfo.layer_name = this->getName().c_str();
-        mLastTimeStamp = frameInfo.current_timestamp;
-        mFlinger->mFrameExtn->SetFrameInfo(frameInfo);
-    }
-
     mFlinger->signalLayerUpdate();
     mConsumer->onBufferAvailable(item);
 }
@@ -552,10 +514,6 @@ void BufferQueueLayer::onFirstRef() {
     // BufferQueueCore::mMaxDequeuedBufferCount is default to 1
     if (!mFlinger->isLayerTripleBufferingDisabled()) {
         mProducer->setMaxDequeuedBufferCount(2);
-    }
-
-    if (mFlinger->mUseLayerExt && mFlinger->mLayerExt) {
-        mLayerClass = mFlinger->mLayerExt->GetLayerClass(mName);
     }
 }
 

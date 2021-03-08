@@ -182,39 +182,29 @@ Scheduler::ConnectionHandle Scheduler::createConnection(
     auto vsyncSource = makePrimaryDispSyncSource(connectionName, phaseOffsetNs);
     auto eventThread = std::make_unique<impl::EventThread>(std::move(vsyncSource),
                                                            std::move(interceptCallback));
-    bool triggerRefresh = !strcmp(connectionName, "app");
-    return createConnection(std::move(eventThread), triggerRefresh);
+    return createConnection(std::move(eventThread));
 }
 
-Scheduler::ConnectionHandle Scheduler::createConnection(std::unique_ptr<EventThread> eventThread,
-                                                        bool triggerRefresh) {
+Scheduler::ConnectionHandle Scheduler::createConnection(std::unique_ptr<EventThread> eventThread) {
     const ConnectionHandle handle = ConnectionHandle{mNextConnectionHandleId++};
     ALOGV("Creating a connection handle with ID %" PRIuPTR, handle.id);
 
     auto connection =
-            createConnectionInternal(eventThread.get(), ISurfaceComposer::eConfigChangedSuppress,
-                                     triggerRefresh);
+            createConnectionInternal(eventThread.get(), ISurfaceComposer::eConfigChangedSuppress);
 
     mConnections.emplace(handle, Connection{connection, std::move(eventThread)});
     return handle;
 }
 
-sp<EventThreadConnection> Scheduler::createConnectionInternal(EventThread* eventThread,
-        ISurfaceComposer::ConfigChanged configChanged, bool triggerRefresh) {
-    // Refresh need to be triggered from app thread alone.
-    // Triggering it from sf connection can result in infinite loop due to requestnextvsync.
-    if (triggerRefresh) {
-        return eventThread->createEventConnection([&] { resyncAndRefresh(); }, configChanged);
-    } else {
-        return eventThread->createEventConnection([&] { resync(); }, configChanged);
-    }
+sp<EventThreadConnection> Scheduler::createConnectionInternal(
+        EventThread* eventThread, ISurfaceComposer::ConfigChanged configChanged) {
+    return eventThread->createEventConnection([&] { resync(); }, configChanged);
 }
 
-sp<IDisplayEventConnection> Scheduler::createDisplayEventConnection(ConnectionHandle handle,
-        ISurfaceComposer::ConfigChanged configChanged, bool triggerRefresh) {
+sp<IDisplayEventConnection> Scheduler::createDisplayEventConnection(
+        ConnectionHandle handle, ISurfaceComposer::ConfigChanged configChanged) {
     RETURN_IF_INVALID_HANDLE(handle, nullptr);
-    return createConnectionInternal(mConnections[handle].thread.get(), configChanged,
-                                    triggerRefresh);
+    return createConnectionInternal(mConnections[handle].thread.get(), configChanged);
 }
 
 sp<EventThreadConnection> Scheduler::getEventConnection(ConnectionHandle handle) {
@@ -307,7 +297,7 @@ Scheduler::ConnectionHandle Scheduler::enableVSyncInjection(bool enable) {
                 std::make_unique<impl::EventThread>(std::move(vsyncSource),
                                                     impl::EventThread::InterceptVSyncsCallback());
 
-        mInjectorConnectionHandle = createConnection(std::move(eventThread), false /* No Refresh */);
+        mInjectorConnectionHandle = createConnection(std::move(eventThread));
     }
 
     mInjectVSyncs = enable;
@@ -344,7 +334,7 @@ void Scheduler::disableHardwareVsync(bool makeUnavailable) {
     }
 }
 
-void Scheduler::resyncToHardwareVsync(bool makeAvailable, nsecs_t period, bool force_resync) {
+void Scheduler::resyncToHardwareVsync(bool makeAvailable, nsecs_t period) {
     {
         std::lock_guard<std::mutex> lock(mHWVsyncLock);
         if (makeAvailable) {
@@ -360,21 +350,7 @@ void Scheduler::resyncToHardwareVsync(bool makeAvailable, nsecs_t period, bool f
         return;
     }
 
-    setVsyncPeriod(period, force_resync);
-}
-
-void Scheduler::resyncAndRefresh() {
-    resync();
-
-    if (!mDisplayIdle) {
-        return;
-    }
-
-    ATRACE_CALL();
-    const auto& refreshRate = mRefreshRateConfigs.getCurrentRefreshRate();
-    mSchedulerCallback.repaintEverythingForHWC();
-    resyncToHardwareVsync(true /* makeAvailable */, refreshRate.getVsyncPeriod(), true);
-    mDisplayIdle = false;
+    setVsyncPeriod(period);
 }
 
 void Scheduler::resync() {
@@ -388,11 +364,11 @@ void Scheduler::resync() {
     }
 }
 
-void Scheduler::setVsyncPeriod(nsecs_t period, bool force_resync) {
+void Scheduler::setVsyncPeriod(nsecs_t period) {
     std::lock_guard<std::mutex> lock(mHWVsyncLock);
     mPrimaryDispSync->setPeriod(period);
 
-    if (!mPrimaryHWVsyncEnabled || force_resync) {
+    if (!mPrimaryHWVsyncEnabled) {
         mPrimaryDispSync->beginResync();
         mEventControlThread->setVsyncEnabled(true);
         mPrimaryHWVsyncEnabled = true;
@@ -730,10 +706,6 @@ void Scheduler::onPrimaryDisplayAreaChanged(uint32_t displayArea) {
     if (mLayerHistory) {
         mLayerHistory->setDisplayArea(displayArea);
     }
-}
-
-void Scheduler::setIdleState() {
-    mDisplayIdle = true;
 }
 
 } // namespace android

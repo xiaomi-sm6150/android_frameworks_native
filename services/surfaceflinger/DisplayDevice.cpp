@@ -61,8 +61,7 @@ DisplayDevice::DisplayDevice(DisplayDeviceCreationArgs& args)
         mConnectionType(args.connectionType),
         mCompositionDisplay{args.compositionDisplay},
         mPhysicalOrientation(args.physicalOrientation),
-        mIsPrimary(args.isPrimary),
-        mIsPowerModeOverride(false){
+        mIsPrimary(args.isPrimary) {
     mCompositionDisplay->editState().isSecure = args.isSecure;
     mCompositionDisplay->createRenderSurface(
             compositionengine::RenderSurfaceCreationArgs{ANativeWindow_getWidth(
@@ -141,14 +140,6 @@ void DisplayDevice::setActiveConfig(HwcConfigIndexType mode) {
 
 HwcConfigIndexType DisplayDevice::getActiveConfig() const {
     return mActiveConfig;
-}
-
-void DisplayDevice::setPowerModeOverrideConfig(bool supported) {
-    mIsPowerModeOverride = supported;
-}
-
-bool DisplayDevice::getPowerModeOverrideConfig() const {
-    return mIsPowerModeOverride;
 }
 
 ui::Dataspace DisplayDevice::getCompositionDataSpace() const {

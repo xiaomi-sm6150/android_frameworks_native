@@ -151,8 +151,6 @@ public:
     HwcConfigIndexType getActiveConfig() const;
     void setActiveConfig(HwcConfigIndexType mode);
 
-    void setPowerModeOverrideConfig(bool supported);
-    bool getPowerModeOverrideConfig() const;
     // release HWC resources (if any) for removable displays
     void disconnect();
 
@@ -184,7 +182,6 @@ private:
 
     // TODO(b/74619554): Remove special cases for primary display.
     const bool mIsPrimary;
-    bool mIsPowerModeOverride;
 };
 
 struct DisplayDeviceState {
@@ -316,7 +313,7 @@ private:
             logicalOrientation = ui::Rotation::Rotation90;
         }
 
-        const ui::Rotation orientation = device->getPhysicalOrientation() + logicalOrientation;
+        const ui::Rotation orientation = logicalOrientation;
 
         switch (orientation) {
             case ui::ROTATION_0:
