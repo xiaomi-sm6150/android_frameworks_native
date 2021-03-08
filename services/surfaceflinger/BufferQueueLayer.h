@@ -148,7 +148,6 @@ private:
     std::atomic<bool> mSidebandStreamChanged{false};
 
     sp<ContentsChangedListener> mContentsChangedListener;
-    nsecs_t mLastTimeStamp = -1;
 };
 
 } // namespace android

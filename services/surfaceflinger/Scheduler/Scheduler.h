@@ -87,8 +87,7 @@ public:
                                       impl::EventThread::InterceptVSyncsCallback);
 
     sp<IDisplayEventConnection> createDisplayEventConnection(ConnectionHandle,
-                                                             ISurfaceComposer::ConfigChanged,
-                                                             bool triggerRefresh);
+                                                             ISurfaceComposer::ConfigChanged);
 
     sp<EventThreadConnection> getEventConnection(ConnectionHandle);
 
@@ -120,9 +119,8 @@ public:
     // Otherwise, if hardware vsync is not already enabled then this method will
     // no-op.
     // The period is the vsync period from the current display configuration.
-    void resyncToHardwareVsync(bool makeAvailable, nsecs_t period, bool force_resync = false);
+    void resyncToHardwareVsync(bool makeAvailable, nsecs_t period);
     void resync();
-    void resyncAndRefresh();
 
     // Passes a vsync sample to DispSync. periodFlushed will be true if
     // DispSync detected that the vsync period changed, and false otherwise.
@@ -165,8 +163,6 @@ public:
 
     size_t getEventThreadConnectionCount(ConnectionHandle handle);
 
-    void setIdleState();
-
 private:
     friend class TestableScheduler;
 
@@ -184,10 +180,9 @@ private:
     std::unique_ptr<VSyncSource> makePrimaryDispSyncSource(const char* name, nsecs_t phaseOffsetNs);
 
     // Create a connection on the given EventThread.
-    ConnectionHandle createConnection(std::unique_ptr<EventThread>, bool triggerRefresh);
+    ConnectionHandle createConnection(std::unique_ptr<EventThread>);
     sp<EventThreadConnection> createConnectionInternal(EventThread*,
-                                                       ISurfaceComposer::ConfigChanged,
-                                                       bool triggerRefresh);
+                                                       ISurfaceComposer::ConfigChanged);
 
     // Update feature state machine to given state when corresponding timer resets or expires.
     void kernelIdleTimerCallback(TimerState);
@@ -199,7 +194,7 @@ private:
     template <class T>
     bool handleTimerStateChanged(T* currentState, T newState);
 
-    void setVsyncPeriod(nsecs_t period, bool force_resync = false);
+    void setVsyncPeriod(nsecs_t period);
 
     // This function checks whether individual features that are affecting the refresh rate
     // selection were initialized, prioritizes them, and calculates the HwcConfigIndexType
@@ -284,8 +279,6 @@ private:
     const bool mUseContentDetection;
     // This variable indicates whether to use V2 version of the content detection.
     const bool mUseContentDetectionV2;
-    // This flag indicates display in idle. Refresh as and when vsync is requested.
-    bool mDisplayIdle;
 };
 
 } // namespace android

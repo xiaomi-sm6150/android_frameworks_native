@@ -1,15 +1,9 @@
-soong_config_module_type_import {
-    from: "frameworks/native/services/surfaceflinger/Android.bp",
-    module_types: ["libdisplayconfig_cc_defaults"],
-}
-
-libdisplayconfig_cc_defaults {
+cc_defaults {
     name: "libcompositionengine_defaults",
-    defaults: ["surfaceflinger_defaults", "libdisplayconfig_defaults"],
+    defaults: ["surfaceflinger_defaults"],
     cflags: [
         "-DLOG_TAG=\"CompositionEngine\"",
         "-DATRACE_TAG=ATRACE_TAG_GRAPHICS",
-        "-Wno-unused-private-field",
     ],
     shared_libs: [
         "android.frameworks.vr.composer@2.0",
@@ -42,16 +36,12 @@ libdisplayconfig_cc_defaults {
         "android.hardware.graphics.composer@2.3-command-buffer",
         "android.hardware.graphics.composer@2.4-command-buffer",
         "libsurfaceflinger_headers",
-        "display_intf_headers",
     ],
 }
 
 cc_library {
     name: "libcompositionengine",
-    defaults: [
-        "libcompositionengine_defaults",
-        "surfaceflinger_fod_lib_defaults",
-    ],
+    defaults: ["libcompositionengine_defaults"],
     srcs: [
         "src/ClientCompositionRequestCache.cpp",
         "src/CompositionEngine.cpp",
@@ -91,14 +81,6 @@ cc_library {
         "libcompositionengine",
     ],
     local_include_dirs: ["include"],
-    export_include_dirs: ["include"],
-}
-
-cc_library_static {
-    name: "surfaceflinger_fod_lib",
-    srcs: [
-        "src/FodExtension.cpp",
-    ],
     export_include_dirs: ["include"],
 }
 

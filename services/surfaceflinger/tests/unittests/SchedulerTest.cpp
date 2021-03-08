@@ -115,8 +115,7 @@ TEST_F(SchedulerTest, invalidConnectionHandle) {
     ASSERT_NO_FATAL_FAILURE(
             connection = mScheduler->createDisplayEventConnection(handle,
                                                                   ISurfaceComposer::
-                                                                          eConfigChangedSuppress,
-                                                                  false /* No Refresh */));
+                                                                          eConfigChangedSuppress));
     EXPECT_FALSE(connection);
     EXPECT_FALSE(mScheduler->getEventConnection(handle));
 
@@ -144,9 +143,7 @@ TEST_F(SchedulerTest, validConnectionHandle) {
     ASSERT_NO_FATAL_FAILURE(
             connection = mScheduler->createDisplayEventConnection(mConnectionHandle,
                                                                   ISurfaceComposer::
-                                                                          eConfigChangedSuppress,
-                                                                  false /* No Refresh */));
-
+                                                                          eConfigChangedSuppress));
     ASSERT_EQ(mEventThreadConnection, connection);
     EXPECT_TRUE(mScheduler->getEventConnection(mConnectionHandle));
 

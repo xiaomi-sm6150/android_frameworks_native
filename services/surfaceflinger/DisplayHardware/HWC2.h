@@ -236,7 +236,6 @@ public:
     [[clang::warn_unused_result]] virtual hal::Error setContentType(hal::ContentType) = 0;
     [[clang::warn_unused_result]] virtual hal::Error getClientTargetProperty(
             hal::ClientTargetProperty* outClientTargetProperty) = 0;
-    [[clang::warn_unused_result]] virtual hal::Error setDisplayElapseTime(uint64_t timeStamp) = 0;
 };
 
 namespace impl {
@@ -309,7 +308,6 @@ public:
             std::vector<hal::ContentType>* outSupportedContentTypes) const override;
     hal::Error setContentType(hal::ContentType) override;
     hal::Error getClientTargetProperty(hal::ClientTargetProperty* outClientTargetProperty) override;
-    hal::Error setDisplayElapseTime(uint64_t timeStamp) override;
 
     // Other Display methods
     hal::HWDisplayId getId() const override { return mId; }
@@ -344,7 +342,7 @@ private:
     bool mIsConnected = false;
 
     std::unordered_map<hal::HWLayerId, std::unique_ptr<Layer>> mLayers;
-    std::map<hal::HWConfigId, std::shared_ptr<const Config>> mConfigs;
+    std::unordered_map<hal::HWConfigId, std::shared_ptr<const Config>> mConfigs;
 
     std::once_flag mDisplayCapabilityQueryFlag;
     std::unordered_set<hal::DisplayCapability> mDisplayCapabilities;
@@ -383,7 +381,6 @@ public:
             const android::Region& region) = 0;
     [[clang::warn_unused_result]] virtual hal::Error setZOrder(uint32_t z) = 0;
     [[clang::warn_unused_result]] virtual hal::Error setInfo(uint32_t type, uint32_t appId) = 0;
-    [[clang::warn_unused_result]] virtual hal::Error setType(uint32_t type) = 0;
 
     // Composer HAL 2.3
     [[clang::warn_unused_result]] virtual hal::Error setColorTransform(
@@ -426,7 +423,6 @@ public:
     hal::Error setVisibleRegion(const android::Region& region) override;
     hal::Error setZOrder(uint32_t z) override;
     hal::Error setInfo(uint32_t type, uint32_t appId) override;
-    hal::Error setType(uint32_t type) override;
 
     // Composer HAL 2.3
     hal::Error setColorTransform(const android::mat4& matrix) override;
@@ -453,7 +449,6 @@ private:
     android::HdrMetadata mHdrMetadata;
     android::mat4 mColorMatrix;
     uint32_t mBufferSlot;
-    uint32_t mType{0};
 };
 
 } // namespace impl
